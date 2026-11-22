@@ -818,11 +818,26 @@ function run(args: string[]): { code: number; out: string[] } {
   }
   if (fails.length > 0) return { code: 1, out: [...fails.map((f) => `error: ${f.code} ${f.path}`), `failed: ${fails.length} of ${edits.length} edits`] };
   // Output rows: A/D/M by path, R (sorting by its new path) for a move that
-  // succeeded with the old path gone and the new path appearing.
+  // succeeded with the old path gone and the new path appearing. Rows describe
+  // the tree's net change (SPEC section 2: R when <old> existed before the patch
+  // and does not after it, and <new> did not exist before it and does after it),
+  // so a path moved twice in one patch (A->B, B->C) is one R A -> C, not D A + A C.
+  // A cycle (A->B, B->A) resolves back to its start and keeps its original pair.
+  const moveTarget = new Map(tree.moves);
+  const collapsedMoves: [string, string][] = [];
+  for (const [oldP, newP] of tree.moves) {
+    const seen = new Set([oldP]);
+    let end = newP;
+    while (moveTarget.has(end) && !seen.has(end)) {
+      seen.add(end);
+      end = moveTarget.get(end)!;
+    }
+    collapsedMoves.push(end === oldP ? [oldP, newP] : [oldP, end]);
+  }
   const handledOld = new Set<string>();
   const handledNew = new Set<string>();
   const rows: { key: string; line: string }[] = [];
-  for (const [oldP, newP] of tree.moves) {
+  for (const [oldP, newP] of collapsedMoves) {
     if (tree.original(oldP) !== null && tree.now.get(oldP) === null && tree.original(newP) === null && tree.now.get(newP) !== null) {
       handledOld.add(oldP);
       handledNew.add(newP);
